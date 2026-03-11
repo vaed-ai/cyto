@@ -1,0 +1,30 @@
+/* Reset — applied globally, minimal and safe */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+}
+
+/* ─── Theme variables — scoped to [data-vaed], never pollutes external CSS ─── */
+
+[data-vaed][data-theme="dark"] {
+  --vaed-bg: #000000;
+  --vaed-text: #ffffff;
+  --vaed-text-dim: rgba(255, 255, 255, 0.5);
+  --vaed-border: #ffffff;
+  --vaed-accent: #ffffff;
+  --vaed-glow: rgba(255, 255, 255, 0.08);
+}
+
+[data-vaed][data-theme="light"] {
+  --vaed-bg: #ffffff;
+  --vaed-text: #000000;
+  --vaed-text-dim: rgba(0, 0, 0, 0.5);
+  --vaed-border: #000000;
+  --vaed-accent: #000000;
+  --vaed-glow: rgba(0, 0, 0, 0.08);
+}

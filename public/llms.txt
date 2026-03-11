@@ -1,0 +1,84 @@
+# @vaed-ai/cyto
+
+> React components for Cytoscape.js — declarative graph nodes with React content inside.
+
+## Install
+
+```bash
+npm install @vaed-ai/cyto cytoscape cytoscape-cola react-cytoscapejs
+```
+
+## Usage
+
+```tsx
+import { Cyto, CytoNode, CytoEdge, CytoStyle } from '@vaed-ai/cyto'
+
+function Graph() {
+  return (
+    <div style={{ position: 'relative', height: 400 }}>
+      <Cyto>
+        <CytoNode id="a" element={{ data: { id: 'a', label: 'A' } }} />
+        <CytoNode id="b" element={{ data: { id: 'b', label: 'B' } }} />
+        <CytoEdge element={{ id: 'e1', data: { id: 'e1', source: 'a', target: 'b' } }} />
+      </Cyto>
+    </div>
+  )
+}
+```
+
+Wrap `<Cyto>` in a container with `position: relative` and a defined height. The component fills its parent absolutely.
+
+## Components
+
+- `<Cyto>` — Main container. Renders Cytoscape canvas + overlay for React nodes. Props: `layout`, `style`, `className`, `onLoaded`.
+- `<CytoNode>` — Adds a node. Pass `children` to render React content inside. Props: `id`, `element` (data, position, classes, locked, grabbable), `onClick`.
+- `<CytoEdge>` — Adds an edge between two nodes. Ghost nodes created automatically for ordering. Props: `element` (id, data with source/target, classes).
+- `<CytoStyle>` — Declarative stylesheet. Supports CSS variables via `var(--name)` which are resolved at runtime via `getComputedStyle`. Props: `stylesheet`.
+- `useGraph()` — Hook returning `{ cy, cyRef, relayout, layout }`.
+- `CytoContext` — React context for the Cytoscape instance.
+
+## Layout
+
+Cola force-directed layout runs by default with sensible defaults:
+- `refresh: 10`, `maxSimulationTime: 100`, `fit: false`
+- `edgeLength` scales with node connectivity
+- Debounced relayout (300ms) on every `node:add` event
+- Custom layout: pass `layout` prop to `<Cyto>`
+
+## React Content Inside Nodes
+
+```tsx
+<CytoNode id="card" element={{ data: { id: 'card' } }}>
+  <div style={{ padding: 16, background: '#fff', borderRadius: 8 }}>
+    <h3>Title</h3>
+    <p>Any React content</p>
+  </div>
+</CytoNode>
+```
+
+Nodes with children render via Portal into an overlay div that tracks Cytoscape viewport (pan/zoom). ResizeObserver syncs node dimensions.
+
+## Grab Mechanics
+
+- Add class `cyto-grab` to make React content draggable (forwards mousedown to canvas)
+- Add class `cyto-no-grab` to block grab propagation on specific elements
+- Interactive elements (`input`, `button`, `select`, `textarea`, `a`, `label`, `contenteditable`) are automatically excluded from grab
+
+## CSS Variables in Stylesheets
+
+Cytoscape doesn't natively support CSS custom properties. `@vaed-ai/cyto` resolves `var(--name)` values via `getComputedStyle(document.documentElement)` before passing to Cytoscape:
+
+```tsx
+<CytoStyle stylesheet={[{
+  selector: 'node',
+  style: {
+    'background-color': 'var(--my-color)',  // resolved at runtime
+    'color': 'var(--my-text)',
+  }
+}]} />
+```
+
+## Docs
+
+- [Live examples](https://vaed-ai.github.io/cyto)
+- [GitHub](https://github.com/vaed-ai/cyto)
