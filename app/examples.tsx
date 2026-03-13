@@ -10,6 +10,9 @@ import ReactContentExample from '@vaed-ai/cyto/app/examples/react-content'
 import StylesExample from '@vaed-ai/cyto/app/examples/styles'
 import GrabbableExample from '@vaed-ai/cyto/app/examples/grabbable'
 import CssVarsExample from '@vaed-ai/cyto/app/examples/css-vars'
+import CytoPropsExample from '@vaed-ai/cyto/app/examples/cyto-props'
+import EventsExample from '@vaed-ai/cyto/app/examples/events'
+import UseGraphExample from '@vaed-ai/cyto/app/examples/use-graph'
 
 // Source code as strings
 // @ts-ignore
@@ -22,6 +25,12 @@ import stylesSrc from './examples/styles.tsx?raw'
 import grabbableSrc from './examples/grabbable.tsx?raw'
 // @ts-ignore
 import cssVarsSrc from './examples/css-vars.tsx?raw'
+// @ts-ignore
+import cytoPropsSrc from './examples/cyto-props.tsx?raw'
+// @ts-ignore
+import eventsSrc from './examples/events.tsx?raw'
+// @ts-ignore
+import useGraphSrc from './examples/use-graph.tsx?raw'
 
 // ─── Responsive ───
 
@@ -135,6 +144,18 @@ export default function Examples() {
 
     <Example title="CSS variables in Cytoscape stylesheets" code={cssVarsSrc}>
       <CssVarsExample />
+    </Example>
+
+    <Example title="Cyto props: zoom, pan, locked, position, onLoaded" code={cytoPropsSrc}>
+      <CytoPropsExample />
+    </Example>
+
+    <Example title="Events: onClick, onAdded, onMount" code={eventsSrc}>
+      <EventsExample />
+    </Example>
+
+    <Example title="useGraph() hook: imperative access from children" code={useGraphSrc}>
+      <UseGraphExample />
     </Example>
   </>
 }

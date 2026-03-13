@@ -377,7 +377,17 @@ interface CytoNodeProps {
 }
 
 const CytoNodeCore: React.FC<CytoNodeProps & { forwardedRef: React.Ref<any> }> = (props) => {
-  const { forwardedRef, element, ghost, children, onAdded, ...restProps } = props
+  const { forwardedRef, element, ghost, children, onAdded, onClick, onGhost, onUnghost } = props
+
+  // Store callbacks in refs — they must NOT trigger effect re-runs
+  const onAddedRef = useRef(onAdded)
+  const onClickRef = useRef(onClick)
+  const onGhostRef = useRef(onGhost)
+  const onUnghostRef = useRef(onUnghost)
+  onAddedRef.current = onAdded
+  onClickRef.current = onClick
+  onGhostRef.current = onGhost
+  onUnghostRef.current = onUnghost
 
   const internalElRef = useRef<any>(null)
   const refToUse = (forwardedRef && typeof forwardedRef === 'object' && 'current' in forwardedRef)
@@ -437,7 +447,7 @@ const CytoNodeCore: React.FC<CytoNodeProps & { forwardedRef: React.Ref<any> }> =
         grabbable: element?.grabbable,
       })
       if (ghost) { cyEl.addClass('ghost'); cyEl.emit('ghost') }
-      onAdded?.(cyEl, cy)
+      onAddedRef.current?.(cyEl, cy)
     } else {
       cyEl.addClass(cls)
       if (classesArray.length > 0) cyEl.addClass(classesArray.join(' '))
@@ -472,10 +482,9 @@ const CytoNodeCore: React.FC<CytoNodeProps & { forwardedRef: React.Ref<any> }> =
     if (typeof forwardedRef === 'function') forwardedRef(cyEl)
     setCytoscapeNode(cyEl)
 
-    const { onClick, onGhost, onUnghost } = restProps
-    const clickHandler = (e: any) => onClick?.(e)
-    const ghostHandler = (e: any) => onGhost?.(e)
-    const unghostHandler = (e: any) => onUnghost?.(e)
+    const clickHandler = (e: any) => onClickRef.current?.(e)
+    const ghostHandler = (e: any) => onGhostRef.current?.(e)
+    const unghostHandler = (e: any) => onUnghostRef.current?.(e)
 
     cyEl.on('click', clickHandler)
     cyEl.on('ghost', ghostHandler)
@@ -507,8 +516,7 @@ const CytoNodeCore: React.FC<CytoNodeProps & { forwardedRef: React.Ref<any> }> =
   }, [
     cy, id, ghost, element?.data?.label, element?.data?.id,
     element?.locked, element?.grabbable, JSON.stringify(classesArray),
-    cls, onAdded, refToUse, forwardedRef,
-    restProps.onClick, restProps.onGhost, restProps.onUnghost, parent
+    cls, refToUse, forwardedRef, parent
   ])
 
   // ─── Position tracking + resize observer ───
