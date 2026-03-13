@@ -153,6 +153,8 @@ export const Cyto = memo(function Cyto({
   className,
   style: _style = {},
   children = null,
+  zoom = true,
+  pan = true,
   ...props
 }: {
   onLoaded?: (cy: any) => void
@@ -160,6 +162,8 @@ export const Cyto = memo(function Cyto({
   className?: string
   style?: React.CSSProperties
   children?: any
+  zoom?: boolean
+  pan?: boolean
   [key: string]: any
 }) {
   const [_cy, setCy] = useState<any>()
@@ -267,6 +271,8 @@ export const Cyto = memo(function Cyto({
         layout={layout}
         stylesheet={finalStylesheet}
         panningEnabled={true}
+        userZoomingEnabled={zoom}
+        userPanningEnabled={pan}
         style={{ position: 'absolute', inset: 0 }}
       />
     )

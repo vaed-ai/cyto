@@ -1,6 +1,6 @@
 {
   "name": "@vaed-ai/cyto",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "React components for Cytoscape.js — declarative nodes with React content inside",
   "homepage": "https://vaed-ai.github.io/cyto",
   "repository": {
