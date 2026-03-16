@@ -4,7 +4,7 @@ import {
   createContext, forwardRef, memo, useCallback, useContext,
   useEffect, useLayoutEffect, useMemo, useRef, useState
 } from 'react'
-import { createPortal } from 'react-dom'
+import { Over, Node as OverNode, useOver } from '@vaed-ai/over'
 
 // @ts-ignore
 import CytoscapeComponent from 'react-cytoscapejs'
@@ -58,54 +58,8 @@ export function useGraph() {
   return useContext(CytoContext)
 }
 
-const CytoReactNodesContext = createContext<{
-  mount: (id: string, activate: () => void) => boolean
-  unmount: (id: string, activate: () => void) => void
-} | null>(null)
-
 const CytoElementsContext = createContext<any>(undefined)
 CytoElementsContext.displayName = 'CytoElementsContext'
-
-// ─── Portal ───
-
-function Portal({ children, containerRef }: {
-  children: React.ReactNode
-  containerRef: React.RefObject<HTMLElement>
-}) {
-  const [mounted, setMounted] = useState(false)
-  useEffect(() => { setMounted(true); return () => setMounted(false) }, [])
-  const target = containerRef?.current || (typeof document !== 'undefined' ? document.body : null)
-  return mounted && target ? createPortal(children, target) : null
-}
-
-// ─── CytoReactNode (renders React children in overlay) ───
-
-function CytoReactNode({ id, children, boxRefCallback }: {
-  id: string
-  children: React.ReactNode
-  boxRefCallback: (node: HTMLDivElement | null) => void
-}) {
-  const ctx = useContext(CytoReactNodesContext)
-  if (!ctx) throw new Error('CytoReactNode must be inside <Cyto>')
-  const { mount, unmount } = ctx
-  const { overlayRef } = useGraph()
-
-  const activate = useCallback(() => setIsActive(true), [])
-  const initialActive = useMemo(() => mount(id, activate), [])
-  const [isActive, setIsActive] = useState(initialActive)
-
-  useEffect(() => () => { unmount(id, activate) }, [])
-
-  if (!isActive) return null
-
-  return (
-    <Portal containerRef={overlayRef}>
-      <div ref={boxRefCallback} style={{ position: 'absolute' }}>
-        {children}
-      </div>
-    </Portal>
-  )
-}
 
 // ─── Grab helpers ───
 
@@ -113,7 +67,6 @@ const INTERACTIVE_TAGS = new Set(['INPUT', 'BUTTON', 'SELECT', 'TEXTAREA', 'A', 
 
 function shouldGrab(target: HTMLElement): boolean {
   let el: HTMLElement | null = target
-  // Walk up from target; if we hit cyto-no-grab or interactive element before cyto-grab, don't grab
   while (el) {
     if (INTERACTIVE_TAGS.has(el.tagName)) return false
     if (el.getAttribute('contenteditable') === 'true') return false
@@ -124,10 +77,9 @@ function shouldGrab(target: HTMLElement): boolean {
   return false
 }
 
-function forwardToCanvas(e: React.MouseEvent, rootRef: React.RefObject<HTMLElement>) {
+function forwardToCanvas(e: MouseEvent, rootRef: React.RefObject<HTMLElement>) {
   const canvas = rootRef.current?.querySelector('canvas')
   if (!canvas) return
-  const rect = canvas.getBoundingClientRect()
   const synth = new MouseEvent('mousedown', {
     clientX: e.clientX,
     clientY: e.clientY,
@@ -141,22 +93,60 @@ function forwardToCanvas(e: React.MouseEvent, rootRef: React.RefObject<HTMLEleme
   canvas.dispatchEvent(synth)
 }
 
+// ─── ViewportSync (syncs cy viewport → Over transform + grid bg) ───
+
+function ViewportSync({ bgRef }: { bgRef: React.RefObject<HTMLDivElement> }) {
+  const over = useOver()
+  const { cy } = useContext(CytoContext)
+
+  useEffect(() => {
+    if (!cy || !over) return
+    const viewport = () => {
+      const pan = cy.pan()
+      const zoom = cy.zoom()
+      if (bgRef.current) {
+        const z = zoom * 3
+        bgRef.current.style.backgroundSize = `${z}em ${z}em`
+        bgRef.current.style.backgroundPosition = `${pan.x}px ${pan.y}px`
+      }
+      over.setTransform(pan, zoom)
+    }
+    cy.on('viewport', viewport)
+    return () => cy.removeListener('viewport', viewport)
+  }, [cy, over, bgRef])
+
+  return null
+}
+
+// ─── GrabHandler (forwards mousedown on .cyto-grab to cytoscape canvas) ───
+
+function GrabHandler() {
+  const over = useOver()
+  const { rootRef } = useContext(CytoContext)
+
+  useEffect(() => {
+    const el = over?.overlayRef?.current
+    if (!el) return
+    const handler = (e: MouseEvent) => {
+      if (shouldGrab(e.target as HTMLElement)) {
+        e.preventDefault()
+        forwardToCanvas(e, rootRef)
+      }
+    }
+    el.addEventListener('mousedown', handler)
+    return () => el.removeEventListener('mousedown', handler)
+  }, [over, rootRef])
+
+  return null
+}
+
 // ─── Cyto (main container) ───
 
 let nodesIterator = 1
 let edgesIterator = 1
 let stylesIterator = 1
 
-export const Cyto = memo(function Cyto({
-  onLoaded: _onLoaded,
-  layout: _layout,
-  className,
-  style: _style = {},
-  children = null,
-  zoom = true,
-  pan = true,
-  ...props
-}: {
+export const Cyto = memo(function Cyto(props: {
   onLoaded?: (cy: any) => void
   layout?: any
   className?: string
@@ -164,15 +154,39 @@ export const Cyto = memo(function Cyto({
   children?: any
   zoom?: boolean
   pan?: boolean
+  grid?: boolean
   [key: string]: any
 }) {
+  return (
+    <Over className={props.className} style={props.style}>
+      <CytoInner {...props} />
+    </Over>
+  )
+})
+
+function CytoInner({
+  onLoaded: _onLoaded,
+  layout: _layout,
+  children = null,
+  zoom = true,
+  pan = true,
+  grid = true,
+}: {
+  onLoaded?: (cy: any) => void
+  layout?: any
+  children?: any
+  zoom?: boolean
+  pan?: boolean
+  grid?: boolean
+  [key: string]: any
+}) {
+  const over = useOver()
+
   const [_cy, setCy] = useState<any>()
   const cyRef = useRef<any>(undefined)
   cyRef.current = _cy
   const layoutRef = useRef<any>(undefined)
-  const overlayRef = useRef<any>(undefined)
   const bgRef = useRef<any>(undefined)
-  const rootRef = useRef<any>(undefined)
 
   const gridColor = '#747474'
 
@@ -181,32 +195,13 @@ export const Cyto = memo(function Cyto({
     setCy(cy)
     cyRef.current = cy
 
-    const viewport = () => {
-      const pan = cy.pan()
-      const zoom = cy.zoom()
-      if (bgRef.current) {
-        const z = zoom * 3
-        bgRef.current.style['background-size'] = `${z}em ${z}em`
-        bgRef.current.style['background-position'] = `${pan.x}px ${pan.y}px`
-      }
-      if (overlayRef.current) {
-        overlayRef.current.style['transform'] = `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`
-      }
-    }
-
     const onNodeAdd = (evt: any) => {
       cy.emit(`node:created:${evt.target.id()}`, [evt.target])
       relayout()
     }
 
-    cy.on('viewport', viewport)
     cy.on('add', 'node', onNodeAdd)
     _onLoaded?.(cy)
-
-    return () => {
-      cy.removeListener('viewport', viewport)
-      cy.off('add', 'node', onNodeAdd)
-    }
   }, [_cy])
 
   // ─── Stylesheet management ───
@@ -262,10 +257,34 @@ export const Cyto = memo(function Cyto({
     }, 300)
   }, [layout])
 
-  const [cytoscapeEl, setCytoscapeEl] = useState<any>(null)
-  useEffect(() => {
-    if (rootRef.current) setCytoscapeEl(
-      <CytoscapeComponent
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
+
+  const contextValue = useMemo(() => ({
+    cyRef, layout, layoutRef, relayout, style, cy: _cy, classesRef,
+    overlayRef: over?.overlayRef,
+    rootRef: over?.rootRef,
+  }), [cyRef, layout, layoutRef, relayout, style, _cy, classesRef, over])
+
+  return (
+    <CytoContext.Provider value={contextValue}>
+      {grid && <div
+        ref={bgRef}
+        style={{
+          position: 'absolute', inset: 0,
+          width: '100%', height: '100%',
+          backgroundImage: `
+            radial-gradient(circle at 0 0, ${gridColor} 1px, transparent 1px),
+            radial-gradient(circle at .1em .1em, ${gridColor} 1px, transparent 1px),
+            radial-gradient(circle at 0 .1em, ${gridColor} 1px, transparent 1px),
+            radial-gradient(circle at .1em 0, ${gridColor} 1px, transparent 1px)
+          `,
+          backgroundSize: '3em 3em',
+          backgroundPosition: '0 0',
+          backgroundRepeat: 'repeat',
+        }}
+      />}
+      {mounted && <CytoscapeComponent
         cy={onLoaded}
         elements={elements}
         layout={layout}
@@ -274,84 +293,15 @@ export const Cyto = memo(function Cyto({
         userZoomingEnabled={zoom}
         userPanningEnabled={pan}
         style={{ position: 'absolute', inset: 0 }}
-      />
-    )
-  }, [onLoaded, finalStylesheet])
-
-  // ─── React nodes activation tracking ───
-
-  const activationMap = useRef<Map<string, Set<() => void>>>(new Map())
-  const reactNodesProviderValue = useMemo(() => ({
-    mount: (id: string, activate: () => void): boolean => {
-      const set = activationMap.current.get(id)
-      if (set) {
-        set.add(activate)
-        return false
-      }
-      activationMap.current.set(id, new Set([activate]))
-      return true
-    },
-    unmount: (id: string, activate: () => void) => {
-      const set = activationMap.current.get(id)
-      if (!set) return
-      set.delete(activate)
-      if (set.size > 0) {
-        const next = set.values().next().value
-        next?.()
-      } else {
-        activationMap.current.delete(id)
-      }
-    },
-  }), [])
-
-  const handleOverlayMouseDown = useCallback((e: React.MouseEvent) => {
-    if (shouldGrab(e.target as HTMLElement)) {
-      e.preventDefault()
-      forwardToCanvas(e, rootRef as React.RefObject<HTMLElement>)
-    }
-  }, [])
-
-  const contextValue = useMemo(() => ({
-    cyRef, layout, layoutRef, relayout, style, cy: _cy, classesRef, overlayRef, rootRef
-  }), [cyRef, layout, layoutRef, relayout, style, _cy, classesRef, overlayRef])
-
-  return (
-    <CytoContext.Provider value={contextValue}>
-      <CytoReactNodesContext.Provider value={reactNodesProviderValue}>
-        <div className={className} style={{ position: 'absolute', inset: 0, ...(_style || {}) }} ref={rootRef}>
-          <div
-            ref={bgRef}
-            style={{
-              position: 'absolute', inset: 0,
-              width: '100%', height: '100%',
-              backgroundImage: `
-                radial-gradient(circle at 0 0, ${gridColor} 1px, transparent 1px),
-                radial-gradient(circle at .1em .1em, ${gridColor} 1px, transparent 1px),
-                radial-gradient(circle at 0 .1em, ${gridColor} 1px, transparent 1px),
-                radial-gradient(circle at .1em 0, ${gridColor} 1px, transparent 1px)
-              `,
-              backgroundSize: '3em 3em',
-              backgroundPosition: '0 0',
-              backgroundRepeat: 'repeat',
-            }}
-          />
-          {cytoscapeEl}
-          {!!_cy && <div
-            ref={overlayRef}
-            onMouseDown={handleOverlayMouseDown}
-            style={{
-              position: 'absolute', left: 0, top: 0,
-              transformOrigin: 'top left',
-              pointerEvents: 'none',
-            }}
-          >
-            {children}
-          </div>}
-        </div>
-      </CytoReactNodesContext.Provider>
+      />}
+      {!!_cy && <>
+        <ViewportSync bgRef={bgRef} />
+        <GrabHandler />
+        {children}
+      </>}
     </CytoContext.Provider>
   )
-})
+}
 
 // ─── CytoNode ───
 
@@ -379,7 +329,6 @@ interface CytoNodeProps {
 const CytoNodeCore: React.FC<CytoNodeProps & { forwardedRef: React.Ref<any> }> = (props) => {
   const { forwardedRef, element, ghost, children, onAdded, onClick, onGhost, onUnghost } = props
 
-  // Store callbacks in refs — they must NOT trigger effect re-runs
   const onAddedRef = useRef(onAdded)
   const onClickRef = useRef(onClick)
   const onGhostRef = useRef(onGhost)
@@ -394,6 +343,7 @@ const CytoNodeCore: React.FC<CytoNodeProps & { forwardedRef: React.Ref<any> }> =
     ? forwardedRef : internalElRef
 
   const { cy, relayout } = useContext(CytoContext)
+  const over = useOver()
   const i = useMemo(() => nodesIterator++, [])
   const cls = useMemo(() => `ni-${i}${ghost ? '-ghost' : ''}`, [i, ghost])
   const parent: any = useContext(CytoElementsContext)
@@ -404,11 +354,6 @@ const CytoNodeCore: React.FC<CytoNodeProps & { forwardedRef: React.Ref<any> }> =
     element.id = id
     element.data.id = id
   }
-
-  const [htmlElement, setHtmlElement] = useState<HTMLDivElement | null>(null)
-  const boxRefCallback = useCallback((node: HTMLDivElement | null) => {
-    setHtmlElement(node || null)
-  }, [id])
 
   const [isMounted, setIsMounted] = useState(false)
   useEffect(() => {
@@ -461,7 +406,6 @@ const CytoNodeCore: React.FC<CytoNodeProps & { forwardedRef: React.Ref<any> }> =
         cyEl[element.grabbable ? 'grabify' : 'ungrabify']()
     }
 
-    // Ghost state management
     const classes = cyEl.classes() as string[]
     const hasGhostClasses = classes.some((c: string) => c.endsWith('-ghost'))
     const hasNonGhostClasses = classes.some((c: string) => c.startsWith('ni-') && !c.endsWith('-ghost'))
@@ -472,7 +416,7 @@ const CytoNodeCore: React.FC<CytoNodeProps & { forwardedRef: React.Ref<any> }> =
       cyEl.removeClass('ghost')
       cyEl.emit('unghost')
     } else if (ghost && hasNonGhostClasses) {
-      // non-ghost already controls — skip
+      // non-ghost already controls
     } else if (ghost && !hasGhostCss && !hasNonGhostClasses) {
       cyEl.addClass('ghost')
       cyEl.emit('ghost')
@@ -519,77 +463,40 @@ const CytoNodeCore: React.FC<CytoNodeProps & { forwardedRef: React.Ref<any> }> =
     cls, refToUse, forwardedRef, parent
   ])
 
-  // ─── Position tracking + resize observer ───
-
-  const onPositionRef = useRef<((p: { x: number; y: number }) => void) | null>(null)
-  useEffect(() => {
-    onPositionRef.current = (p) => {
-      if (htmlElement) {
-        htmlElement.style.transform = `translate(calc(${p.x}px - 50%), calc(${p.y}px - 50%))`
-      }
-    }
-  }, [id, htmlElement])
+  // ─── Position sync: cy node → Over node ───
 
   useEffect(() => {
-    if (!children && !ghost) return
-    if (!isMounted || !cytoscapeNode?.length || !cytoscapeNode.inside() || (children && !htmlElement)) return
+    if (!children || !cytoscapeNode?.length || !cytoscapeNode.inside() || !over) return
 
-    if (htmlElement) {
-      const p = cytoscapeNode.position()
-      if (p && onPositionRef.current) onPositionRef.current(p)
-    }
+    const p = cytoscapeNode.position()
+    if (p) over.setNodePosition(id, p)
 
     const handlePosition = (e: any) => {
-      onPositionRef.current?.(e.target.position())
+      over.setNodePosition(id, e.target.position())
     }
     cytoscapeNode.on('position', handlePosition)
 
-    let animId: number | null = null
-    let observer: ResizeObserver | null = null
-
-    if (htmlElement) {
-      observer = new ResizeObserver(entries => {
-        if (animId) cancelAnimationFrame(animId)
-        animId = requestAnimationFrame(() => {
-          for (const entry of entries) {
-            if (entry.target === htmlElement && cytoscapeNode?.length && cytoscapeNode.inside()) {
-              const { width, height } = entry.contentRect
-              const parse = (v: any): number => typeof v === 'string' ? parseFloat(v) : typeof v === 'number' ? v : 0
-              const cw = parse(cytoscapeNode.style('width'))
-              const ch = parse(cytoscapeNode.style('height'))
-              if (width > 0 && height > 0 && (Math.abs(cw - width) > 0.5 || Math.abs(ch - height) > 0.5)) {
-                cytoscapeNode.style({ width, height })
-                relayout?.()
-              }
-            }
-          }
-        })
-      })
-      observer.observe(htmlElement)
-
-      const iw = htmlElement.offsetWidth, ih = htmlElement.offsetHeight
-      if (iw > 0 && ih > 0 && cytoscapeNode?.length && cytoscapeNode.inside()) {
-        const parse = (v: any): number => typeof v === 'string' ? parseFloat(v) : typeof v === 'number' ? v : 0
-        const cw = parse(cytoscapeNode.style('width'))
-        const ch = parse(cytoscapeNode.style('height'))
-        if (Math.abs(cw - iw) > 0.5 || Math.abs(ch - ih) > 0.5) {
-          cytoscapeNode.style({ width: iw, height: ih })
-          relayout?.()
-        }
-      }
-    }
-
     return () => {
       cytoscapeNode?.off?.('position', handlePosition)
-      if (htmlElement && observer) observer.unobserve(htmlElement)
-      if (animId) cancelAnimationFrame(animId)
-      observer?.disconnect()
     }
-  }, [id, relayout, isMounted, cytoscapeNode, htmlElement, children, ghost])
+  }, [id, cytoscapeNode, over, children])
+
+  // ─── Resize: Over node size → cy node size ───
+
+  const handleResize = useCallback((size: { width: number; height: number }) => {
+    if (!cytoscapeNode?.length || !cytoscapeNode.inside()) return
+    const parse = (v: any): number => typeof v === 'string' ? parseFloat(v) : typeof v === 'number' ? v : 0
+    const cw = parse(cytoscapeNode.style('width'))
+    const ch = parse(cytoscapeNode.style('height'))
+    if (size.width > 0 && size.height > 0 && (Math.abs(cw - size.width) > 0.5 || Math.abs(ch - size.height) > 0.5)) {
+      cytoscapeNode.style({ width: size.width, height: size.height })
+      relayout?.()
+    }
+  }, [cytoscapeNode, relayout])
 
   return (
     <CytoElementsContext.Provider value={cytoscapeNode}>
-      {!!children && <CytoReactNode id={id} children={children} boxRefCallback={boxRefCallback} />}
+      {!!children && <OverNode id={id} onResize={handleResize}>{children}</OverNode>}
     </CytoElementsContext.Provider>
   )
 }
@@ -698,7 +605,6 @@ export const CytoEdge = memo(function CytoEdge({
     }
   }, [cy, id])
 
-  // Ghost nodes for source/target
   const ghostsRef = useRef(0)
   const ghostMounted = useCallback(() => {
     ghostsRef.current++

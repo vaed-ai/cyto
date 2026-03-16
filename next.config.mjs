@@ -16,6 +16,7 @@ const nextConfig = {
     config.resolve.alias = {
       ...config.resolve.alias,
       '@vaed-ai/cyto': path.resolve(__dirname, 'index.tsx'),
+      '@vaed-ai/over': path.resolve(__dirname, 'node_modules/@vaed-ai/over/dist/index.js'),
     };
     // ?raw imports: return raw file content as string
     // Must exclude ?raw from all existing loaders, then add raw rule
